@@ -1,1 +1,1 @@
-# tvet-confessions
+# tvet-confession-bot
