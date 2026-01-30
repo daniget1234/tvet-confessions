@@ -35,10 +35,8 @@ from contextlib import suppress
 import asyncpg
 
 
-# --- Koyeb Specific: Prevent Multiple Instances with PID check ---
-
-os.environ['BOT_IS_RUNNING'] = '1'
-os.environ['BOT_PID'] = str(os.getpid())
+# --- Render Specific: Remove PID check since Render manages processes ---
+# Remove the PID check as it causes issues on Render
 
 # --- Constants ---
 CATEGORIES = [
@@ -62,7 +60,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_IDS_STR = os.getenv("ADMIN_IDS")  # Comma-separated admin IDs
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 PAGE_SIZE = int(os.getenv("PAGE_SIZE", "15"))  # Number of items per page for pagination
-HTTP_PORT = int(os.getenv("PORT", "8080"))  # Koyeb uses PORT environment variable
+HTTP_PORT = int(os.getenv("PORT", "10000"))  # Render uses PORT environment variable, changed to 10000
 
 # --- Database Configuration ---
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -306,43 +304,21 @@ async def create_db_pool():
         if connection_string.startswith('postgresql://'):
             connection_string = connection_string.replace('postgresql://', 'postgres://')
         
-        # For Supabase free tier, SSL is usually required
-        # But we need to handle it differently for asyncpg
-        # Remove any existing sslmode parameter and add our own
-        import urllib.parse
+        # For Render/Supabase free tier, SSL is usually required
+        # Add sslmode=require if not present
+        if 'sslmode' not in connection_string:
+            if '?' in connection_string:
+                connection_string += '&sslmode=require'
+            else:
+                connection_string += '?sslmode=require'
         
-        # Parse the connection string
-        parsed = urllib.parse.urlparse(connection_string)
-        query_params = urllib.parse.parse_qs(parsed.query)
+        logger.info(f"Connecting to database...")
         
-        # Remove any existing sslmode
-        query_params.pop('sslmode', None)
-        
-        # Add our sslmode - 'require' for Supabase
-        query_params['sslmode'] = ['require']
-        
-        # Rebuild the connection string
-        netloc = parsed.netloc
-        if '@' in netloc:
-            # Keep the auth part
-            pass
-        
-        new_query = urllib.parse.urlencode(query_params, doseq=True)
-        new_url = urllib.parse.urlunparse((
-            parsed.scheme,
-            parsed.netloc,
-            parsed.path,
-            parsed.params,
-            new_query,
-            parsed.fragment
-        ))
-        
-        logger.info(f"Connecting to Supabase database...")
-        
+        # For Render, we need to use the connection string as is
         db_pool = await asyncpg.create_pool(
-            dsn=new_url,
+            dsn=connection_string,
             min_size=1,
-            max_size=3,
+            max_size=10,  # Increased for better concurrency
             command_timeout=60,
             max_queries=50000,
             max_inactive_connection_lifetime=300,
@@ -360,7 +336,6 @@ async def create_db_pool():
                 min_size=1,
                 max_size=3,
                 command_timeout=60,
-                ssl='require',
                 max_queries=50000,
                 max_inactive_connection_lifetime=300,
                 timeout=30
@@ -380,7 +355,7 @@ async def setup():
         logger.info(f"Bot: @{bot_info.username}")
         
         # Create PostgreSQL connection pool
-        logger.info(f"Setting up Supabase connection...")
+        logger.info(f"Setting up database connection...")
         try:
             db_pool = await create_db_pool()
             
@@ -3724,8 +3699,7 @@ async def handle_accept_rules(callback_query: types.CallbackQuery):
     )
     await callback_query.answer("Rules accepted!")
 
-# --- Health Check Handler for Koyeb ---
-# Update health check handler
+# --- Health Check Handler for Render ---
 async def health_check_handler(request):
     """Simple health check for Render"""
     try:
@@ -3757,8 +3731,9 @@ async def health_check_handler(request):
             {"status": "unhealthy", "error": str(e)},
             status=500
         )
+
 async def start_http_server():
-    """Start HTTP server for health checks"""
+    """Start HTTP server for health checks - FIXED FOR RENDER"""
     try:
         app = web.Application()
         app.router.add_get('/', health_check_handler)
@@ -3766,15 +3741,19 @@ async def start_http_server():
         
         runner = web.AppRunner(app)
         await runner.setup()
+        
+        # Bind to 0.0.0.0 on the port provided by Render
         site = web.TCPSite(runner, '0.0.0.0', HTTP_PORT)
         await site.start()
+        
         logger.info(f"✅ HTTP server started on port {HTTP_PORT}")
         
-        # Keep server running
-        while True:
-            await asyncio.sleep(3600)
+        # Keep the server running
+        return runner
+        
     except Exception as e:
         logger.error(f"Failed to start HTTP server: {e}")
+        raise
 
 async def set_bot_commands():
     """Set bot commands for users and admins"""
@@ -3840,8 +3819,10 @@ async def monitor_database_connection():
         
         await asyncio.sleep(300)  # Check every 5 minutes
 
-# --- Main Function ---
+# --- Main Function - FIXED FOR RENDER ---
 async def main():
+    http_server_runner = None
+    
     try:
         # Clear webhook at the start (important for polling)
         try:
@@ -3868,36 +3849,47 @@ async def main():
         logger.info(f"🚀 Starting bot @{bot_info.username} on Render...")
         
         # Start HTTP server for health checks
-        asyncio.create_task(start_http_server())
+        http_server_runner = await start_http_server()
         
-        # Start polling
+        # Start database monitor
+        asyncio.create_task(monitor_database_connection())
+        
+        # Start polling with proper error handling
         logger.info("Starting polling...")
+        
+        # Start the dispatcher
         await dp.start_polling(
             bot, 
-            skip_updates=True, 
+            skip_updates=True,
             allowed_updates=dp.resolve_used_update_types()
         )
         
     except Exception as e:
-        logger.critical(f"Fatal error: {e}", exc_info=True)
-        # Don't immediately exit, wait a bit
-        await asyncio.sleep(5)
+        logger.critical(f"Fatal error in main: {e}", exc_info=True)
+        
+        # Cleanup
+        if http_server_runner:
+            await http_server_runner.cleanup()
+        if db_pool:
+            await db_pool.close()
+        
         raise
 
 async def shutdown_bot():
     """Clean shutdown"""
     logger.info("Shutting down...")
-    if bot and hasattr(bot, 'session'):
-        await bot.session.close()
     if db_pool:
         await db_pool.close()
     logger.info("Bot stopped.")
 
 if __name__ == "__main__":
-    # Simple startup
+    # Render-compatible startup
     try:
+        # Run the main function
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
+        asyncio.run(shutdown_bot())
     except Exception as e:
         logger.critical(f"Unhandled exception: {e}")
+        asyncio.run(shutdown_bot())
