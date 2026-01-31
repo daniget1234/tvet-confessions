@@ -60,7 +60,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_IDS_STR = os.getenv("ADMIN_IDS")  # Comma-separated admin IDs
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 PAGE_SIZE = int(os.getenv("PAGE_SIZE", "15"))  # Number of items per page for pagination
-HTTP_PORT = int(os.getenv("PORT", "10000"))  # Render uses PORT environment variable, changed to 10000
+HTTP_PORT = int(os.getenv("PORT", "8080"))  # Render uses PORT environment variable, changed to 10000
 
 # --- Database Configuration ---
 DATABASE_URL = os.getenv("DATABASE_URL")
