@@ -1,20 +1,17 @@
 services:
   - type: web
     name: confession-bot
-    env: python
-    region: frankfurt  # For Ethiopia
-    buildCommand: |
-      pip install --upgrade pip setuptools wheel
-      pip install -r requirements.txt
-    startCommand: python main.py
+    dockerfilePath: ./Dockerfile  # ← ONLY this line for build config
     envVars:
       - key: BOT_TOKEN
+        sync: false
+      - key: DATABASE_URL
         sync: false
       - key: ADMIN_IDS
         sync: false
       - key: CHANNEL_ID
         sync: false
-      - key: DATABASE_URL
-        sync: false
       - key: PORT
-        value: 10000
+        value: 8080
+    healthCheckPath: /health
+    autoDeploy: true
