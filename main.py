@@ -333,11 +333,15 @@ async def setup():
                 BEGIN
                     IF EXISTS (SELECT 1 FROM information_schema.columns 
                                WHERE table_name='user_status' AND column_name='has_accepted_rules' AND data_type='integer') THEN
+                        ALTER TABLE user_status ALTER COLUMN has_accepted_rules DROP DEFAULT;
                         ALTER TABLE user_status ALTER COLUMN has_accepted_rules TYPE BOOLEAN USING (has_accepted_rules = 1);
+                        ALTER TABLE user_status ALTER COLUMN has_accepted_rules SET DEFAULT FALSE;
                     END IF;
                     IF EXISTS (SELECT 1 FROM information_schema.columns 
                                WHERE table_name='user_status' AND column_name='is_blocked' AND data_type='integer') THEN
+                        ALTER TABLE user_status ALTER COLUMN is_blocked DROP DEFAULT;
                         ALTER TABLE user_status ALTER COLUMN is_blocked TYPE BOOLEAN USING (is_blocked = 1);
+                        ALTER TABLE user_status ALTER COLUMN is_blocked SET DEFAULT FALSE;
                     END IF;
                 END $$;
             """)
