@@ -50,18 +50,18 @@ RATE_LIMIT_SECONDS = 30
 
 # Load environment variables
 load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKENS")
-ADMIN_IDS_STR = os.getenv("ADMIN_ID")  # Keep backward compatibility
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_IDS_STR = os.getenv("ADMIN_IDS")  # Keep backward compatibility
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 PAGE_SIZE = int(os.getenv("PAGE_SIZE", "15"))
 DATABASE_URL = os.getenv("DATABASE_URL")
-HTTP_PORT_STR = os.getenv("PORT")
+HTTP_PORT_STR = os.getenv("PORT", "8080")
 
 # Validate essential environment variables
 if not BOT_TOKEN:
     raise ValueError("FATAL: BOT_TOKEN environment variable not set!")
 if not ADMIN_IDS_STR:
-    raise ValueError("FATAL: ADMIN_ID environment variable not set!")
+    raise ValueError("FATAL: ADMIN_IDS environment variable not set!")
 if not CHANNEL_ID:
     raise ValueError("FATAL: CHANNEL_ID environment variable not set!")
 if not DATABASE_URL:
@@ -78,7 +78,7 @@ try:
         # Single admin ID
         ADMIN_IDS.add(int(ADMIN_IDS_STR))
 except ValueError:
-    raise ValueError("FATAL: ADMIN_ID environment variable must contain valid integers!")
+    raise ValueError("FATAL: ADMIN_IDS environment variable must contain valid integers!")
 
 # Setup logging
 logging.basicConfig(
