@@ -720,6 +720,20 @@ class BlockUserMiddleware(BaseMiddleware):
         return await handler(event, data)
 
 # --- Helper Functions (existing ones kept, new ones added) ---
+
+def parse_categories(cat_data):
+    if not cat_data:
+        return []
+    if isinstance(cat_data, list):
+        return cat_data
+    if isinstance(cat_data, str):
+        if cat_data.startswith('{') and cat_data.endswith('}'):
+            cats = cat_data[1:-1].split(',')
+            return [c.strip('"') for c in cats if c]
+        else:
+            return [c.strip() for c in cat_data.split(',') if c.strip()]
+    return []
+
 def create_category_keyboard(selected_categories: List[str] = None):
     if selected_categories is None:
         selected_categories = []
@@ -1147,7 +1161,7 @@ async def start(message: types.Message, state: FSMContext, command: Optional[Com
                     return
                 
                 comm_count = conf_data['comment_count']
-                categories = conf_data['categories'] or []
+                categories = parse_categories(conf_data['categories'])
                 category_tags = " ".join([f"#{html.quote(cat)}" for cat in categories]) if categories else "#Unknown"
                 
                 if conf_data['photo_file_id']:
@@ -2905,7 +2919,7 @@ async def handle_approve_confession(callback_query: types.CallbackQuery, state: 
     try:
         link = f"https://t.me/{bot_info.username}?start=view_{conf['id']}"
         add_link = f"https://t.me/{bot_info.username}?start=addcomment_{conf['id']}"
-        categories = conf['categories'] or []
+        categories = parse_categories(conf['categories'])
         category_tags = " ".join([f"#{html.quote(cat)}" for cat in categories])
         
         channel_kbd = InlineKeyboardMarkup(inline_keyboard=[
